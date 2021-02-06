@@ -11,14 +11,28 @@ class IPC extends EventEmitter {
             _len: null,
             _killed: false,
         });
-        subprocess.stdout.on('data', this._onRawData.bind(this));
+        subprocess.stdout.on('readable', this._onReadable.bind(this));
         subprocess.on('exit', this._onProcessExit.bind(this));
         subprocess.on('error', e => this.emit('error', e));
     }
 
-    _onRawData(buf) {
+    _onReadable() {
+        let bufs = [];
+        let buf;
+        while ((buf = this.subprocess.stdout.read()) !== null) {
+            bufs.push(buf);
+        }
+        buf = Buffer.concat(bufs);
+        let pos = this._read(buf);
+        if (pos < buf.length) {
+            this.subprocess.stdout.unshift(buf.slice(pos));
+        }
+    }
+
+    _read(buf) {
         if (this._killed) {
-            return;
+            // ignore all read buffers
+            return buf.length;
         }
         let pos = 0;
         for (;;) {
@@ -41,7 +55,7 @@ class IPC extends EventEmitter {
                 pos = reader.getCursor();
             }
         }
-        this.subprocess.stdout.unshift(buf.slice(pos));
+        return pos;
     }
 
     _onProcessExit(sig) {
